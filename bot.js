@@ -3,62 +3,74 @@ const mineflayer = require('mineflayer');
 const botNames = ['talhapro1098', 'talha1099', 'talha2099', 'talha3099', 'talha4099'];
 const bots = [];
 let botJoinDelay = 0;
+const messageCounts = {};
+const activeBots = {};
 
-function createBot(username) {
-    setTimeout(() => {
-        const bot = mineflayer.createBot({
-            host: 'play.applemc.fun',
-            port: 25565,
-            username: username,
-            version: '1.20.1',
-            auth: 'offline'
-        });
-
-        bot.on('login', () => console.log(`✅ ${username} logged in!`));
-
-        bot.on('spawn', async () => {
-            console.log(`🎮 ${username} spawned in! Waiting before moving...`);
-            await delay(3000);
-            openRealmSelector(bot);
-        });
-
-        bot.on('message', async (message) => {
-            const msg = message.toString();
-            console.log(`💬 ${username} Server Message: ${msg}`);
-
-            if (msg.includes('/register')) {
-                console.log(`📝 ${username} detected registration prompt! Sending /register likese11 likese11`);
-                await delay(2000);
-                bot.chat('/register likese11 likese11');
-            } else if (msg.includes('/login')) {
-                console.log(`🔑 ${username} detected login prompt! Sending /login likese11`);
-                await delay(2000);
-                bot.chat('/login likese11');
-            }
-        });
-
-        bot.on('kicked', (reason) => {
-            console.log(`❌ ${username} was kicked: ${reason}`);
-            console.log(`⏳ Reconnecting ${username} in 30s...`);
-            setTimeout(() => createBot(username), 30000);
-        });
-
-        bot.on('error', (err) => {
-            console.log(`❌ ${username} Connection error:`, err);
-        });
-
-        bot.on('end', () => {
-            console.log(`🔄 ${username} disconnected. Reconnecting in 30s...`);
-            setTimeout(() => createBot(username), 30000);
-        });
-
-        bots.push(bot);
-    }, botJoinDelay);
-    botJoinDelay += 5000; // Delay each bot joining by 5 seconds
+async function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+async function createBot(username) {
+    return new Promise((resolve, reject) => {
+        setTimeout(() => {
+            const bot = mineflayer.createBot({
+                host: 'play.applemc.fun',
+                port: 25565,
+                username: username,
+                version: '1.20.1',
+                auth: 'offline',
+            });
+
+            messageCounts[username] = 0;
+            activeBots[username] = false;
+
+            bot.on('login', () => console.log(`✅ ${username} logged in!`));
+
+            bot.on('spawn', async () => {
+                console.log(`🎮 ${username} spawned in! Waiting before moving...`);
+                await delay(3000);
+                openRealmSelector(bot);
+                resolve(bot);  // Resolve when the bot is spawned and ready to go
+            });
+
+            bot.on('message', async (message) => {
+                const msg = message.toString();
+                if (activeBots[username]) {
+                    messageCounts[username]++;
+                    printMessageCounts();
+                }
+
+                if (msg.includes('/register')) {
+                    console.log(`📝 ${username} detected registration! Sending /register likese11 likese11`);
+                    await delay(2000);
+                    bot.chat('/register likese11 likese11');
+                } else if (msg.includes('/login')) {
+                    console.log(`🔑 ${username} detected login! Sending /login likese11`);
+                    await delay(2000);
+                    bot.chat('/login likese11');
+                }
+            });
+
+            bot.on('kicked', (reason) => {
+                console.log(`❌ ${username} was kicked: ${reason}`);
+                console.log(`⏳ Reconnecting ${username} in 30s...`);
+                setTimeout(() => createBot(username), 30000);
+            });
+
+            bot.on('error', (err) => {
+                console.log(`❌ ${username} Connection error:`, err);
+                reject(err);  // Reject on error
+            });
+
+            bot.on('end', () => {
+                console.log(`🔄 ${username} disconnected. Reconnecting in 30s...`);
+                setTimeout(() => createBot(username), 30000);
+            });
+
+            bots.push(bot);
+        }, botJoinDelay);
+        botJoinDelay += 5000; // 5 second delay between each bot
+    });
 }
 
 async function openRealmSelector(bot) {
@@ -89,10 +101,7 @@ async function openRealmSelector(bot) {
     let realmDye = bot.currentWindow.slots.find(item => item && item.name.includes('yellow_dye'));
 
     if (!realmDye) {
-        console.log(`❌ ${bot.username} Yellow dye not found! Listing all items:`);
-        bot.currentWindow.slots.forEach((item, index) => {
-            if (item) console.log(`🔍 Slot ${index}: ${item.name}`);
-        });
+        console.log(`❌ ${bot.username} Yellow dye not found!`);
         return;
     }
 
@@ -102,20 +111,46 @@ async function openRealmSelector(bot) {
         await bot.clickWindow(realmDye.slot, 0, 0);
         await delay(2000);
         if (!bot.currentWindow) {
-            console.log(`✅ ${bot.username} Successfully exited realm selector menu!`);
+            console.log(`✅ ${bot.username} Successfully entered realm!`);
             break;
         }
         clickAttempts--;
     }
 
     if (clickAttempts === 0) {
-        console.log(`❌ ${bot.username} Failed to click yellow dye after multiple attempts!`);
+        console.log(`❌ ${bot.username} Failed to click yellow dye!`);
         return;
     }
 
     await delay(3000);
     bot.chat('/warp afk');
-    console.log(`🚀 ${bot.username} Executed /warp afk to move to AFK area.`);
+    console.log(`🚀 ${bot.username} executed /warp afk.`);
+
+    // Activate message counting after bot is ready
+    activeBots[bot.username] = true;
+    printMessageCounts();
 }
 
-botNames.forEach(name => createBot(name));
+function printMessageCounts() {
+    console.clear();
+    console.log('📩 Active Bots & Message Counts:');
+    Object.keys(activeBots).forEach(name => {
+        if (activeBots[name]) {
+            console.log(`➡️ ${name}: Messages [${messageCounts[name]}]`);
+        } else {
+            console.log(`❌ ${name}: Not joined yet.`);
+        }
+    });
+}
+
+async function startBots() {
+    for (const name of botNames) {
+        try {
+            await createBot(name);  // Wait for each bot to join and spawn before continuing
+        } catch (error) {
+            console.error(`Failed to start bot ${name}:`, error);
+        }
+    }
+}
+
+startBots();
